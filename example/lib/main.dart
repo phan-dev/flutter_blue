@@ -9,6 +9,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter_blue/flutter_blue.dart';
 import 'package:flutter_blue_example/widgets.dart';
 
+import 'package:convert/convert.dart';
+
 void main() {
   runApp(FlutterBlueApp());
 }
@@ -53,8 +55,7 @@ class BluetoothOffScreen extends StatelessWidget {
             Text(
               'Bluetooth Adapter is ${state != null ? state.toString().substring(15) : 'not available'}.',
               style: Theme.of(context)
-                  .primaryTextTheme
-                  .subhead
+                  .primaryTextTheme.headline1
                   ?.copyWith(color: Colors.white),
             ),
           ],
@@ -152,17 +153,24 @@ class FindDevicesScreen extends StatelessWidget {
 }
 
 class DeviceScreen extends StatelessWidget {
-  const DeviceScreen({Key? key, required this.device}) : super(key: key);
+  //const DeviceScreen({Key? key, required this.device}) : super(key: key);
+  DeviceScreen({Key? key, required this.device}) : super(key: key);
 
   final BluetoothDevice device;
 
-  List<int> _getRandomBytes() {
-    final math = Random();
+  //List<BluetoothService> myServices;
+  //BluetoothService watchService;
+  BluetoothCharacteristic? rxChar;
+  BluetoothCharacteristic? txChar;
+
+  String dataDeviceTime = 'Device Time';
+
+  List<int> _getDeviceTimeBytes() {
     return [
-      math.nextInt(255),
-      math.nextInt(255),
-      math.nextInt(255),
-      math.nextInt(255)
+      65,0,0,0,
+      0,0,0,0,
+      0,0,0,0,
+      0,0,0,65
     ];
   }
 
@@ -177,11 +185,11 @@ class DeviceScreen extends StatelessWidget {
                     characteristic: c,
                     onReadPressed: () => c.read(),
                     onWritePressed: () async {
-                      await c.write(_getRandomBytes(), withoutResponse: true);
+                      await c.write(_getDeviceTimeBytes(), withoutResponse: true);
                       await c.read();
                     },
                     onNotificationPressed: () async {
-                      await c.setNotifyValue(!c.isNotifying);
+                      await c.setNotifyValue(c.isNotifying);
                       await c.read();
                     },
                     descriptorTiles: c.descriptors
@@ -189,7 +197,7 @@ class DeviceScreen extends StatelessWidget {
                           (d) => DescriptorTile(
                             descriptor: d,
                             onReadPressed: () => d.read(),
-                            onWritePressed: () => d.write(_getRandomBytes()),
+                            onWritePressed: () => d.write(_getDeviceTimeBytes()),
                           ),
                         )
                         .toList(),
@@ -299,9 +307,57 @@ class DeviceScreen extends StatelessWidget {
                 );
               },
             ),
+            TextButton(
+              child: Text('Start'),
+              onPressed: () async {
+                var myServices = await device.discoverServices();
+                var watchService = myServices.firstWhere((element) => element.uuid.toString() == '0000fff0-0000-1000-8000-00805f9b34fb');
+                rxChar = watchService.characteristics.firstWhere((element) => element.uuid.toString() == '0000fff7-0000-1000-8000-00805f9b34fb');
+                txChar = watchService.characteristics.firstWhere((element) => element.uuid.toString() == '0000fff6-0000-1000-8000-00805f9b34fb');
+                await rxChar?.setNotifyValue(true);
+              },
+            ),
+            TextButton(
+              child: Text('Get Device Time'),
+              onPressed: () async {
+                await txChar?.write(_getDeviceTimeBytes(), withoutResponse: true);
+                var rxCharResult = await rxChar?.read();
+                dataDeviceTime = decodeDeviceTime(rxCharResult!);
+                print(dataDeviceTime);
+                //
+                // This is the trick
+                //
+                (context as Element).markNeedsBuild();
+              },
+            ),
+            Text(dataDeviceTime),
+            TextButton(
+              child: Text('Get Device Time'),
+              onPressed: () async {
+                await txChar?.write(_getDeviceTimeBytes(), withoutResponse: true);
+                var rxCharResult = await rxChar?.read();
+                dataDeviceTime = decodeDeviceTime(rxCharResult!);
+                print(dataDeviceTime);
+                //
+                // This is the trick to update state for StatelessWidget
+                //
+                (context as Element).markNeedsBuild();
+              },
+            ),
+            Text(dataDeviceTime),
           ],
         ),
       ),
     );
+  }
+
+  String decodeDeviceTime(List<int> bytes) {
+    var result = "Device Time: ";
+    if(hex.encode([bytes[0]])!='41'){
+      return result;
+    }
+    result += '20' + hex.encode([bytes[1]]) + '-' + hex.encode([bytes[2]]) + '-' + hex.encode([bytes[3]]);
+    result += ' ' + hex.encode([bytes[4]]) + ':' + hex.encode([bytes[5]]) + ':' + hex.encode([bytes[6]]);
+    return result;
   }
 }
