@@ -182,6 +182,22 @@ class DeviceScreen extends StatelessWidget {
     return [9, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 9];
   }
 
+  // byte ModeStart = 0;
+  // byte ModeContinue = 2;
+  // byte ModeDelete = (byte)0x99;
+
+  // byte[0]: cmd
+  // byte[1]: mode
+  // byte[4]: year
+  // byte[5]: month
+  // byte[6]: day
+  // byte[7]: hour
+  // byte[8]: min
+  // byte[9]: second
+  List<int> _getStaticHRBytes() {
+    return [85, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 85];
+  }
+
   List<Widget> _buildServiceTiles(List<BluetoothService> services) {
     return services
         .map(
@@ -334,6 +350,16 @@ class DeviceScreen extends StatelessWidget {
               },
             ),
             TextButton(
+              child: Text('Clear'),
+              onPressed: () async {
+                dataBLE = '';
+                //
+                // This is the trick to update state for StatelessWidget
+                //
+                (context as Element).markNeedsBuild();
+              },
+            ),
+            TextButton(
               child: Text('Get Device Time'),
               onPressed: () async {
                 await txChar?.write(_getDeviceTimeBytes(),
@@ -362,6 +388,13 @@ class DeviceScreen extends StatelessWidget {
               child: Text('Stop Realtime Step'),
               onPressed: () async {
                 await txChar?.write(_stopRealtimeStepBytes(),
+                    withoutResponse: true);
+              },
+            ),
+            TextButton(
+              child: Text('Get Static HR'),
+              onPressed: () async {
+                await txChar?.write(_getStaticHRBytes(),
                     withoutResponse: true);
               },
             ),
@@ -465,6 +498,50 @@ class DeviceScreen extends StatelessWidget {
     return result;
   }
 
+  String decodeStaticHR(List<int> bytes) {
+    var result = "Static HR: ";
+    if (bytes[0].toString() != '85') {
+      print("It's not Static HR. Data Code: " + bytes[0].toString());
+      return result;
+    }
+    List listData = List.empty(growable: true);
+    int count = 10;
+    int length = bytes.length;
+    int size = (length / count).toInt();
+    if (size == 0) {
+      return result + "Static HR End";
+    }
+    for (int i=0; i<size; i++) {
+      // int flag = 1 + (i + 1) * count;
+
+      // datetime
+      Map<String, String> mapData = new Map<String, String>();
+      var dateTime = "";
+      var staticHR = "";
+      dateTime += '20' +
+          hex.encode([bytes[3 + i * 10]]) +
+          '-' +
+          hex.encode([bytes[4 + i * 10]]) +
+          '-' +
+          hex.encode([bytes[5 + i * 10]]);
+      dateTime += ' ' +
+          hex.encode([bytes[6 + i * 10]]) +
+          ':' +
+          hex.encode([bytes[7 + i * 10]]) +
+          ':' +
+          hex.encode([bytes[8 + i * 10]]);
+      mapData["dateTime"] = dateTime;
+      staticHR += getValue(bytes[9 + i * 10], 0).toString();
+      mapData["staticHR"] = staticHR;
+      listData.add(mapData);
+    }
+    result += listData.toString();
+    if (bytes[length-1].toString() == '255') {
+      result += "Static HR End";
+    }
+    return result;
+  }
+
   int getValue(int b, int count) {
     return (b * pow(256, count).toInt());
   }
@@ -482,6 +559,9 @@ class DeviceScreen extends StatelessWidget {
         break;
       case '24': //0x18
         return decodeActivityExercise(bytes);
+        break;
+      case '85': //0x55
+        return decodeStaticHR(bytes);
         break;
       default:
         return bytes.toString();
