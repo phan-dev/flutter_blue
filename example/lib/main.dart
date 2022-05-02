@@ -3,6 +3,7 @@
 // BSD-style license that can be found in the LICENSE file.
 
 import 'dart:async';
+import 'dart:collection';
 import 'dart:math';
 
 import 'package:flutter/material.dart';
@@ -55,7 +56,8 @@ class BluetoothOffScreen extends StatelessWidget {
             Text(
               'Bluetooth Adapter is ${state != null ? state.toString().substring(15) : 'not available'}.',
               style: Theme.of(context)
-                  .primaryTextTheme.headline1
+                  .primaryTextTheme
+                  .headline1
                   ?.copyWith(color: Colors.white),
             ),
           ],
@@ -164,14 +166,20 @@ class DeviceScreen extends StatelessWidget {
   BluetoothCharacteristic? txChar;
 
   String dataDeviceTime = 'Device Time';
+  String dataRealtimeStep = 'Realtime Step';
+
+  String dataBLE = '';
 
   List<int> _getDeviceTimeBytes() {
-    return [
-      65,0,0,0,
-      0,0,0,0,
-      0,0,0,0,
-      0,0,0,65
-    ];
+    return [65, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 65];
+  }
+
+  List<int> _startRealtimeStepBytes() {
+    return [9, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 11];
+  }
+
+  List<int> _stopRealtimeStepBytes() {
+    return [9, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 9];
   }
 
   List<Widget> _buildServiceTiles(List<BluetoothService> services) {
@@ -185,7 +193,8 @@ class DeviceScreen extends StatelessWidget {
                     characteristic: c,
                     onReadPressed: () => c.read(),
                     onWritePressed: () async {
-                      await c.write(_getDeviceTimeBytes(), withoutResponse: true);
+                      await c.write(_getDeviceTimeBytes(),
+                          withoutResponse: true);
                       await c.read();
                     },
                     onNotificationPressed: () async {
@@ -197,7 +206,8 @@ class DeviceScreen extends StatelessWidget {
                           (d) => DescriptorTile(
                             descriptor: d,
                             onReadPressed: () => d.read(),
-                            onWritePressed: () => d.write(_getDeviceTimeBytes()),
+                            onWritePressed: () =>
+                                d.write(_getDeviceTimeBytes()),
                           ),
                         )
                         .toList(),
@@ -311,33 +321,25 @@ class DeviceScreen extends StatelessWidget {
               child: Text('Start'),
               onPressed: () async {
                 var myServices = await device.discoverServices();
-                var watchService = myServices.firstWhere((element) => element.uuid.toString() == '0000fff0-0000-1000-8000-00805f9b34fb');
-                rxChar = watchService.characteristics.firstWhere((element) => element.uuid.toString() == '0000fff7-0000-1000-8000-00805f9b34fb');
-                txChar = watchService.characteristics.firstWhere((element) => element.uuid.toString() == '0000fff6-0000-1000-8000-00805f9b34fb');
+                var watchService = myServices.firstWhere((element) =>
+                    element.uuid.toString() ==
+                    '0000fff0-0000-1000-8000-00805f9b34fb');
+                rxChar = watchService.characteristics.firstWhere((element) =>
+                    element.uuid.toString() ==
+                    '0000fff7-0000-1000-8000-00805f9b34fb');
+                txChar = watchService.characteristics.firstWhere((element) =>
+                    element.uuid.toString() ==
+                    '0000fff6-0000-1000-8000-00805f9b34fb');
                 await rxChar?.setNotifyValue(true);
               },
             ),
             TextButton(
               child: Text('Get Device Time'),
               onPressed: () async {
-                await txChar?.write(_getDeviceTimeBytes(), withoutResponse: true);
+                await txChar?.write(_getDeviceTimeBytes(),
+                    withoutResponse: true);
                 var rxCharResult = await rxChar?.read();
                 dataDeviceTime = decodeDeviceTime(rxCharResult!);
-                print(dataDeviceTime);
-                //
-                // This is the trick
-                //
-                (context as Element).markNeedsBuild();
-              },
-            ),
-            Text(dataDeviceTime),
-            TextButton(
-              child: Text('Get Device Time'),
-              onPressed: () async {
-                await txChar?.write(_getDeviceTimeBytes(), withoutResponse: true);
-                var rxCharResult = await rxChar?.read();
-                dataDeviceTime = decodeDeviceTime(rxCharResult!);
-                print(dataDeviceTime);
                 //
                 // This is the trick to update state for StatelessWidget
                 //
@@ -345,6 +347,34 @@ class DeviceScreen extends StatelessWidget {
               },
             ),
             Text(dataDeviceTime),
+            TextButton(
+              child: Text('Start Realtime Step'),
+              onPressed: () async {
+                await txChar?.write(_startRealtimeStepBytes(),
+                    withoutResponse: true);
+                //
+                // This is the trick to update state for StatelessWidget
+                //
+                (context as Element).markNeedsBuild();
+              },
+            ),
+            TextButton(
+              child: Text('Stop Realtime Step'),
+              onPressed: () async {
+                await txChar?.write(_stopRealtimeStepBytes(),
+                    withoutResponse: true);
+              },
+            ),
+            StreamBuilder<List<int>>(
+              stream: rxChar?.value,
+              initialData: [],
+              builder: (c, snapshot) {
+                dataBLE += decodeBLEData(snapshot.data!) + '\n';
+                return Column(
+                  children: [Text(dataBLE)],
+                );
+              },
+            ),
           ],
         ),
       ),
@@ -353,11 +383,108 @@ class DeviceScreen extends StatelessWidget {
 
   String decodeDeviceTime(List<int> bytes) {
     var result = "Device Time: ";
-    if(hex.encode([bytes[0]])!='41'){
+    if (bytes[0].toString() != '65') {
+      print("It's not Device Time. Data Code: " + bytes[0].toString());
       return result;
     }
-    result += '20' + hex.encode([bytes[1]]) + '-' + hex.encode([bytes[2]]) + '-' + hex.encode([bytes[3]]);
-    result += ' ' + hex.encode([bytes[4]]) + ':' + hex.encode([bytes[5]]) + ':' + hex.encode([bytes[6]]);
+    result += '20' +
+        hex.encode([bytes[1]]) +
+        '-' +
+        hex.encode([bytes[2]]) +
+        '-' +
+        hex.encode([bytes[3]]);
+    result += ' ' +
+        hex.encode([bytes[4]]) +
+        ':' +
+        hex.encode([bytes[5]]) +
+        ':' +
+        hex.encode([bytes[6]]);
     return result;
+  }
+
+  String decodeRealtimeStep(List<int> bytes) {
+    var result = "Realtime Step: ";
+    if (bytes[0].toString() != '9') {
+      print("It's not Realtime Step. Data Code: " + bytes[0].toString());
+      return result;
+    }
+
+    Map<String, String> mapData = new Map<String, String>();
+    List activityData = List.filled(6, 0);
+    int step = 0;
+    double cal = 0;
+    double distance = 0;
+    int time = 0;
+    int exerciseTime = 0;
+    int heart = 0;
+    int temp = 0;
+    for (int i = 1; i < 5; i++) {
+      step += getValue(bytes[i], i - 1);
+    }
+    for (int i = 5; i < 9; i++) {
+      cal += getValue(bytes[i], i - 5);
+    }
+    for (int i = 9; i < 13; i++) {
+      distance += getValue(bytes[i], i - 9);
+    }
+    for (int i = 13; i < 17; i++) {
+      time += getValue(bytes[i], i - 13);
+    }
+    for (int i = 17; i < 21; i++) {
+      exerciseTime += getValue(bytes[i], i - 17);
+    }
+    heart = getValue(bytes[21], 0);
+    temp = getValue(bytes[22], 0) + getValue(bytes[23], 1);
+
+    activityData[0] = step;
+    activityData[1] = cal / 100;
+    activityData[2] = distance / 100;
+    activityData[3] = time / 60;
+    activityData[4] = heart;
+    activityData[5] = exerciseTime;
+
+    mapData["step"] = activityData[0].toString();
+    mapData["calories"] = activityData[1].toString();
+    mapData["distance"] = activityData[2].toString();
+    mapData["exerciseMinutes"] = activityData[3].toString();
+    mapData["heartRate"] = activityData[4].toString();
+    mapData["activeMinutes"] = activityData[5].toString();
+    mapData["tempData"] = (temp * 0.1).toString();
+
+    result += mapData.toString();
+    return result;
+  }
+
+  String decodeActivityExercise(List<int> bytes) {
+    var result = "Activity Exercise: ";
+    if (bytes[0].toString() != '24') {
+      print("It's not Activity Exercise. Data Code: " + bytes[0].toString());
+      return result;
+    }
+    result += bytes.toString();
+    return result;
+  }
+
+  int getValue(int b, int count) {
+    return (b * pow(256, count).toInt());
+  }
+
+  String decodeBLEData(List<int> bytes) {
+    if (bytes.isEmpty) {
+      return "";
+    }
+    switch (bytes[0].toString()) {
+      case '65': //0x41
+        return decodeDeviceTime(bytes);
+        break;
+      case '9': //0x09
+        return decodeRealtimeStep(bytes);
+        break;
+      case '24': //0x18
+        return decodeActivityExercise(bytes);
+        break;
+      default:
+        return bytes.toString();
+    }
   }
 }
