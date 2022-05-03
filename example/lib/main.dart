@@ -198,6 +198,10 @@ class DeviceScreen extends StatelessWidget {
     return [85, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 85];
   }
 
+  List<int> _getHistoryBloodPressureBytes() {
+    return [103, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 103];
+  }
+
   List<Widget> _buildServiceTiles(List<BluetoothService> services) {
     return services
         .map(
@@ -398,6 +402,13 @@ class DeviceScreen extends StatelessWidget {
                     withoutResponse: true);
               },
             ),
+            TextButton(
+              child: Text('Get History Blood Pressure'),
+              onPressed: () async {
+                await txChar?.write(_getHistoryBloodPressureBytes(),
+                    withoutResponse: true);
+              },
+            ),
             StreamBuilder<List<int>>(
               stream: rxChar?.value,
               initialData: [],
@@ -542,6 +553,48 @@ class DeviceScreen extends StatelessWidget {
     return result;
   }
 
+  String decodeHistoryBloodPressure(List<int> bytes) {
+    var result = "History Blood Pressure: ";
+    if (bytes[0].toString() != '103') {
+      print("It's not History Blood Pressure. Data Code: " + bytes[0].toString());
+      return result;
+    }
+    List listData = List.empty(growable: true);
+    int count = 12;
+    int length = bytes.length;
+    int size = (length / count).toInt();
+    if (size == 0) {
+      return result + "History Blood Pressure End";
+    }
+    for (int i=0; i<size; i++) {
+      // datetime
+      Map<String, String> mapData = new Map<String, String>();
+      var dateTime = "";
+      var staticHR = "";
+      dateTime += '20' +
+          hex.encode([bytes[3 + i * count]]) +
+          '-' +
+          hex.encode([bytes[4 + i * count]]) +
+          '-' +
+          hex.encode([bytes[5 + i * count]]);
+      dateTime += ' ' +
+          hex.encode([bytes[6 + i * count]]) +
+          ':' +
+          hex.encode([bytes[7 + i * count]]) +
+          ':' +
+          hex.encode([bytes[8 + i * count]]);
+      mapData["dateTime"] = dateTime;
+      mapData["bloodPressureHigh"] = getValue(bytes[9 + i * count], 0).toString();
+      mapData["bloodPressureLow"] = getValue(bytes[10 + i * count], 0).toString();
+      listData.add(mapData);
+    }
+    result += listData.toString();
+    if (bytes[length-1].toString() == '255') {
+      result += "History Blood Pressure End";
+    }
+    return result;
+  }
+
   int getValue(int b, int count) {
     return (b * pow(256, count).toInt());
   }
@@ -562,6 +615,9 @@ class DeviceScreen extends StatelessWidget {
         break;
       case '85': //0x55
         return decodeStaticHR(bytes);
+        break;
+      case '103': //0x67
+        return decodeHistoryBloodPressure(bytes);
         break;
       default:
         return bytes.toString();
