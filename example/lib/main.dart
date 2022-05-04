@@ -595,6 +595,26 @@ class DeviceScreen extends StatelessWidget {
     return result;
   }
 
+  String decodeDeviceRequest(List<int> bytes) {
+    var result = "Device Request: ";
+    if (bytes[0].toString() != '22') {
+      print("It's not Device Request. Data Code: " + bytes[0].toString());
+      return result;
+    }
+
+    switch (bytes[1].toString()) {
+      case '4':
+        result += 'Find Phone';
+        break;
+      case '5':
+        result += 'SOS';
+        break;
+      default:
+        result += 'Other';
+    }
+    return result;
+  }
+
   int getValue(int b, int count) {
     return (b * pow(256, count).toInt());
   }
@@ -618,6 +638,9 @@ class DeviceScreen extends StatelessWidget {
         break;
       case '103': //0x67
         return decodeHistoryBloodPressure(bytes);
+        break;
+      case '22': //0x16
+        return decodeDeviceRequest(bytes);
         break;
       default:
         return bytes.toString();
