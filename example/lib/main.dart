@@ -164,11 +164,14 @@ class DeviceScreen extends StatelessWidget {
   //BluetoothService watchService;
   BluetoothCharacteristic? rxChar;
   BluetoothCharacteristic? txChar;
+  BluetoothCharacteristic? bpmChar;
+  BluetoothCharacteristic? bpm81Char;
 
   String dataDeviceTime = 'Device Time';
   String dataRealtimeStep = 'Realtime Step';
 
   String dataBLE = '';
+  String dataBPM = '';
 
   List<int> _getDeviceTimeBytes() {
     return [65, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 65];
@@ -180,6 +183,10 @@ class DeviceScreen extends StatelessWidget {
 
   List<int> _stopRealtimeStepBytes() {
     return [9, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 9];
+  }
+
+  List<int> _disconnectBytes() {
+    return [34];
   }
 
   // byte ModeStart = 0;
@@ -213,7 +220,7 @@ class DeviceScreen extends StatelessWidget {
                     characteristic: c,
                     onReadPressed: () => c.read(),
                     onWritePressed: () async {
-                      await c.write(_getDeviceTimeBytes(),
+                      await c.write(_disconnectBytes(),
                           withoutResponse: true);
                       await c.read();
                     },
@@ -227,7 +234,7 @@ class DeviceScreen extends StatelessWidget {
                             descriptor: d,
                             onReadPressed: () => d.read(),
                             onWritePressed: () =>
-                                d.write(_getDeviceTimeBytes()),
+                                d.write(_disconnectBytes()),
                           ),
                         )
                         .toList(),
@@ -416,6 +423,34 @@ class DeviceScreen extends StatelessWidget {
                 dataBLE += decodeBLEData(snapshot.data!) + '\n';
                 return Column(
                   children: [Text(dataBLE)],
+                );
+              },
+            ),
+            // BPM
+            TextButton(
+              child: Text('Start BPM'),
+              onPressed: () async {
+                var myServices = await device.discoverServices();
+                var watchService = myServices.firstWhere((element) =>
+                    element.uuid.toString() ==
+                    '00007809-0000-1000-8000-00805f9b34fb');
+                bpmChar = watchService.characteristics.firstWhere((element) =>
+                    element.uuid.toString() ==
+                    '00008a91-0000-1000-8000-00805f9b34fb');
+                bpm81Char = watchService.characteristics.firstWhere((element) =>
+                    element.uuid.toString() ==
+                    '00008a81-0000-1000-8000-00805f9b34fb');
+                //await bpmChar?.setNotifyValue(true);
+                await bpm81Char?.write(_disconnectBytes());
+              },
+            ),
+            StreamBuilder<List<int>>(
+              stream: bpmChar?.value,
+              initialData: [],
+              builder: (c, snapshot) {
+                dataBPM += snapshot.data!.toString() + '\n';
+                return Column(
+                  children: [Text(dataBPM)],
                 );
               },
             ),
